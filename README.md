@@ -102,3 +102,9 @@ go run ./packaging/mkpkg -version 0.1.8
 ```sh
 go vet ./... && go test ./...
 ```
+
+## 许可证
+
+本项目以 [MIT 许可证](LICENSE) 发布。
+
+程序里包含 Go 标准库和 `golang.org/x/net` 的代码，它们的许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
