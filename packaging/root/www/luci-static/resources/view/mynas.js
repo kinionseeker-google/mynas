@@ -92,6 +92,13 @@ return view.extend({
 		o.datatype = 'uinteger';
 		o.placeholder = '64';
 
+		o = s.option(form.ListValue, 'disks', _('磁盘文件'),
+			_('管理界面里的“磁盘文件”区域：只读查看已挂载磁盘上的全部内容。关闭后这个区域不再显示任何磁盘。'));
+		o.value('auto', _('显示已挂载的磁盘'));
+		o.value('off', _('关闭'));
+		o.default = 'auto';
+		o.rmempty = false;
+
 		o = s.option(form.Value, 'data_dir', _('配置目录'),
 			_('保存账号、链接、任务记录等配置，体积很小。'));
 		o.placeholder = '/etc/mynas';

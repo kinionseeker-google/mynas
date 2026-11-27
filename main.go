@@ -31,6 +31,7 @@ type App struct {
 	dls     *Downloads
 	mounts  *Mounts
 	dav     *Dav
+	disks   *Disks
 	handler http.Handler
 
 	inflight sync.WaitGroup // requests being served by this App
@@ -45,6 +46,7 @@ type Options struct {
 	PortMin   int
 	PortMax   int
 	MinFree   uint64 // bytes that must stay free on the files volume
+	Disks     string // the disk area: "" or "auto", "off", or a comma-separated list of folders
 }
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -73,6 +75,7 @@ func newApp(h *Host, dir string) (*App, error) {
 	a.dls = NewDownloads(h.st, a.files, 3)
 	a.mounts = &Mounts{st: h.st, dl: a.dls}
 	a.dav = NewDav(h.st, a.files)
+	a.disks = &Disks{files: a.files, dataDir: o.DataDir, mode: o.Disks}
 	a.handler = a.routes()
 	return a, nil
 }
@@ -119,6 +122,11 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("PUT /api/settings", auth(a.files.handleSettingsPut))
 	mux.HandleFunc("PUT /api/settings/files-dir", auth(a.host.handleSetFilesDir))
 	mux.HandleFunc("GET /api/hostdirs", auth(a.host.handleHostDirs))
+
+	mux.HandleFunc("GET /api/disks", auth(a.disks.handleDisks))
+	mux.HandleFunc("GET /api/disks/list", auth(a.disks.handleList))
+	mux.HandleFunc("GET /api/disks/find", auth(a.disks.handleFind))
+	mux.HandleFunc("GET /api/disks/download", auth(a.disks.handleDownload))
 
 	mux.HandleFunc("GET /api/dav", auth(a.dav.handleList))
 	mux.HandleFunc("POST /api/dav", auth(a.dav.handleCreate))
@@ -226,6 +234,7 @@ func main() {
 	filesDir := flag.String("files", envOr("MYNAS_FILES", ""), "文件目录（默认是数据目录下的 files）")
 	minFree := flag.Int("min-free", envInt("MYNAS_MIN_FREE", 64), "文件所在磁盘至少保留的空闲空间（MB），低于它时拒绝上传和下载")
 	filesHook := flag.String("files-hook", envOr("MYNAS_FILES_HOOK", ""), "在管理界面更改存储位置时执行的命令（参数是新目录），用于把设置写回系统配置")
+	disks := flag.String("disks", envOr("MYNAS_DISKS", "auto"), "“磁盘文件”区域显示哪些磁盘：auto 自动发现已挂载的磁盘，off 关闭，或用逗号分隔的目录")
 	showVersion := flag.Bool("version", false, "显示版本号")
 	ports := flag.String("proxy-ports", envOr("MYNAS_PROXY_PORTS", "18600-18649"), "外部链接代理内嵌使用的端口范围")
 	flag.Parse()
@@ -248,6 +257,7 @@ func main() {
 	host, err := NewHost(Options{
 		DataDir: *dataDir, FilesDir: *filesDir, FilesHook: *filesHook,
 		BindHost: bind, PortMin: portMin, PortMax: portMax, MinFree: uint64(*minFree) << 20,
+		Disks: strings.TrimSpace(*disks),
 	})
 	if err != nil {
 		log.Fatal(err)

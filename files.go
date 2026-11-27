@@ -30,6 +30,7 @@ type Entry struct {
 	Size  int64  `json:"size"`
 	Mtime int64  `json:"mtime"` // unix milliseconds
 	Type  string `json:"type"`
+	Cloud bool   `json:"cloud,omitempty"` // in the disk area: this folder is the cloud drive's storage location
 }
 
 // Files serves the local file tree. All disk access goes through os.Root,
@@ -339,6 +340,11 @@ func (f *Files) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer fh.Close()
+	sendFile(w, r, fh)
+}
+
+// sendFile answers a download or an inline preview of an opened file.
+func sendFile(w http.ResponseWriter, r *http.Request, fh *os.File) {
 	info, err := fh.Stat()
 	if err != nil {
 		fileErr(w, err)

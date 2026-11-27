@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1544,5 +1545,235 @@ func TestWebDAVNewPassword(t *testing.T) {
 	keys := c.call("GET", "/api/dav", nil, 200)["keys"].([]any)
 	if len(keys) != 1 {
 		t.Errorf("keys after a new password: %v", keys)
+	}
+}
+
+func TestParseMounts(t *testing.T) {
+	text := `/dev/root /rom squashfs ro,relatime 0 0
+proc /proc proc rw,nosuid,nodev,noexec,noatime 0 0
+tmpfs /tmp tmpfs rw,nosuid,nodev,noatime 0 0
+/dev/loop0 /overlay ext4 rw,noatime 0 0
+overlayfs:/overlay / overlay rw,noatime 0 0
+tmpfs /dev tmpfs rw,nosuid,noexec,noatime 0 0
+/dev/sda1 /mnt/sda1 ext4 rw,relatime 0 0
+/dev/sdb1 /mnt/My\040Disk fuseblk rw,relatime 0 0
+/dev/sda1 /mnt/sda1 ext4 rw,relatime 0 0
+/dev/sdc1 /boot vfat rw 0 0
+/dev/sdd /etc/hosts ext4 rw 0 0
+tmpfs /mnt/ram tmpfs rw 0 0
+//192.168.1.5/share /mnt/nas cifs rw 0 0
+/dev/mmcblk0p3 /opt/data f2fs rw 0 0
+/dev/sde1 /tmp/usb vfat rw 0 0
+`
+	var got []string
+	for _, d := range parseMounts(text) {
+		got = append(got, d.Path+" "+d.FS)
+	}
+	want := []string{"/mnt/sda1 ext4", "/mnt/My Disk fuseblk", "/mnt/nas cifs", "/opt/data f2fs"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("parseMounts =\n  %v\nwant\n  %v", got, want)
+	}
+}
+
+// diskApp starts a server whose configuration, storage location and disk list
+// are chosen by the test.
+func diskApp(t *testing.T, o Options) *client {
+	t.Helper()
+	o.BindHost = "127.0.0.1"
+	o.PortMin, o.PortMax = freePortRange(t)
+	app, err := NewApp(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(app.Handler())
+	t.Cleanup(func() { srv.Close(); app.files.root.Close() })
+	c := &client{t: t, base: srv.URL}
+	resp, data := c.req("POST", "/api/setup", map[string]string{"username": "admin", "password": "correct horse"}, true)
+	if resp.StatusCode != 200 {
+		t.Fatalf("setup: %d %s", resp.StatusCode, data)
+	}
+	c.cookie = resp.Cookies()[0]
+	return c
+}
+
+func entryNames(m map[string]any) string {
+	var names []string
+	for _, e := range m["entries"].([]any) {
+		em := e.(map[string]any)
+		n := em["path"].(string)
+		if em["cloud"] == true {
+			n += "(cloud)"
+		}
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
+}
+
+func TestDisks(t *testing.T) {
+	base := t.TempDir()
+	disk := filepath.Join(base, "disk")
+	write := func(rel, content string) {
+		p := filepath.Join(disk, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("电影/a.mkv", "movie")
+	write("照片/2024/海边.jpg", "jpeg bytes")
+	write("readme.txt", "0123456789")
+	write(".hidden/x.txt", "dot folders are part of the disk")
+	write("cloud/mine.txt", "managed by the cloud drive")
+	write("cfg/keep.txt", "next to the configuration")
+	if err := os.WriteFile(filepath.Join(base, "outside.txt"), []byte("not on the disk"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	q := url.QueryEscape
+	c := diskApp(t, Options{DataDir: filepath.Join(disk, "cfg"), FilesDir: filepath.Join(disk, "cloud"), Disks: disk})
+	dq := "disk=" + q(disk)
+
+	// The disk is offered, and it says where the cloud drive's own folder is.
+	disks := c.call("GET", "/api/disks", nil, 200)["disks"].([]any)
+	if len(disks) != 1 {
+		t.Fatalf("disks = %v", disks)
+	}
+	d0 := disks[0].(map[string]any)
+	if d0["id"] != disk || d0["cloudRoot"] != false || d0["cloudPath"] != "cloud" || d0["total"].(float64) <= 0 {
+		t.Errorf("disk = %v", d0)
+	}
+
+	// The top folder: everything on the disk, the cloud folder only pointed at,
+	// the configuration folder not there at all.
+	if got := entryNames(c.call("GET", "/api/disks/list?"+dq+"&path=", nil, 200)); got != ".hidden,cloud(cloud),readme.txt,照片,电影" {
+		t.Errorf("top folder = %s", got)
+	}
+	if got := entryNames(c.call("GET", "/api/disks/list?"+dq+"&path="+q("照片/2024"), nil, 200)); got != "照片/2024/海边.jpg" {
+		t.Errorf("sub folder = %s", got)
+	}
+
+	// Reading files, with ranges and inline preview.
+	if resp, body := c.req("GET", "/api/disks/download?"+dq+"&path=readme.txt", nil, false); resp.StatusCode != 200 || string(body) != "0123456789" || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), "attachment") {
+		t.Errorf("download = %d %q %q", resp.StatusCode, body, resp.Header.Get("Content-Disposition"))
+	}
+	req, _ := http.NewRequest("GET", c.base+"/api/disks/download?"+dq+"&path=readme.txt", nil)
+	req.AddCookie(c.cookie)
+	req.Header.Set("Range", "bytes=3-5")
+	if resp, err := http.DefaultTransport.RoundTrip(req); err != nil {
+		t.Fatal(err)
+	} else {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != 206 || string(b) != "345" {
+			t.Errorf("range = %d %q", resp.StatusCode, b)
+		}
+	}
+	if resp, _ := c.req("GET", "/api/disks/download?"+dq+"&inline=1&path="+q("照片/2024/海边.jpg"), nil, false); resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Disposition"), "inline") || resp.Header.Get("Content-Security-Policy") != "sandbox" {
+		t.Errorf("inline = %d %q", resp.StatusCode, resp.Header.Get("Content-Disposition"))
+	}
+	c.call("GET", "/api/disks/download?"+dq+"&path="+q("照片"), nil, 400) // a folder
+	c.call("GET", "/api/disks/download?"+dq+"&path=nope.txt", nil, 404)
+
+	// Nothing outside the disk, however the path is written.
+	for _, p := range []string{"../outside.txt", "..\\outside.txt", "照片/../../outside.txt", "/../outside.txt"} {
+		if resp, body := c.req("GET", "/api/disks/download?"+dq+"&path="+q(p), nil, false); resp.StatusCode == 200 {
+			t.Errorf("path %q reached %q", p, body)
+		}
+	}
+	// Only folders offered as disks can be named.
+	for _, id := range []string{base, filepath.Join(disk, "电影"), filepath.Join(disk, "cfg"), ""} {
+		c.call("GET", "/api/disks/list?disk="+q(id)+"&path=", nil, 404)
+	}
+
+	// The configuration cannot be read from here, and the cloud drive's folder
+	// is left to "全部文件".
+	c.call("GET", "/api/disks/list?"+dq+"&path=cfg", nil, 400)
+	c.call("GET", "/api/disks/download?"+dq+"&path="+q("cfg/state.json"), nil, 400)
+	c.call("GET", "/api/disks/download?"+dq+"&path="+q("cfg/keep.txt"), nil, 400)
+	c.call("GET", "/api/disks/list?"+dq+"&path=cloud", nil, 409)
+	c.call("GET", "/api/disks/download?"+dq+"&path="+q("cloud/mine.txt"), nil, 409)
+	if got := entryNames(c.call("GET", "/api/files/list?path=", nil, 200)); got != "mine.txt" {
+		t.Errorf("全部文件 = %s", got)
+	}
+
+	// A link on the disk does not open a way around either rule.
+	if err := os.Symlink(filepath.Join(disk, "cfg"), filepath.Join(disk, "link-cfg")); err == nil {
+		c.call("GET", "/api/disks/download?"+dq+"&path="+q("link-cfg/state.json"), nil, 400)
+		c.call("GET", "/api/disks/list?"+dq+"&path=link-cfg", nil, 400)
+		if err := os.Symlink(base, filepath.Join(disk, "link-out")); err == nil {
+			if resp, body := c.req("GET", "/api/disks/download?"+dq+"&path="+q("link-out/outside.txt"), nil, false); resp.StatusCode == 200 {
+				t.Errorf("a link out of the disk was followed: %q", body)
+			}
+		}
+		os.Remove(filepath.Join(disk, "link-cfg"))
+		os.Remove(filepath.Join(disk, "link-out"))
+	} else {
+		t.Logf("symbolic links are not available here (%v); link checks skipped", err)
+	}
+
+	// Search by name: the whole disk or one folder, without the two special folders.
+	found := c.call("GET", "/api/disks/find?"+dq+"&q=T", nil, 200)
+	if got := entryNames(found); got != ".hidden/x.txt,readme.txt" || found["truncated"] != false {
+		t.Errorf("find = %s truncated=%v", got, found["truncated"])
+	}
+	if got := entryNames(c.call("GET", "/api/disks/find?"+dq+"&path="+q("照片")+"&q="+q("海"), nil, 200)); got != "照片/2024/海边.jpg" {
+		t.Errorf("find in a folder = %s", got)
+	}
+	c.call("GET", "/api/disks/find?"+dq+"&q=", nil, 400)
+
+	// Read-only: there is nothing to write with, and it needs a login.
+	for _, m := range []string{"POST", "PUT", "DELETE"} {
+		if resp, _ := c.req(m, "/api/disks/list?"+dq+"&path=", nil, true); resp.StatusCode != 404 && resp.StatusCode != 405 {
+			t.Errorf("%s on the disk area = %d, want 404 or 405", m, resp.StatusCode)
+		}
+	}
+	anon := &client{t: t, base: c.base}
+	for _, p := range []string{"/api/disks", "/api/disks/list?" + dq, "/api/disks/download?" + dq + "&path=readme.txt", "/api/disks/find?" + dq + "&q=a"} {
+		if resp, _ := anon.req("GET", p, nil, false); resp.StatusCode != 401 {
+			t.Errorf("anonymous %s = %d, want 401", p, resp.StatusCode)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(disk, "readme.txt")); string(b) != "0123456789" {
+		t.Error("a file on the disk changed")
+	}
+}
+
+func TestDisksSpecialCases(t *testing.T) {
+	q := url.QueryEscape
+	// The whole disk is the storage location: it is named, but browsed under 全部文件.
+	base := t.TempDir()
+	disk := filepath.Join(base, "disk")
+	os.MkdirAll(disk, 0o755)
+	os.WriteFile(filepath.Join(disk, "a.txt"), []byte("a"), 0o644)
+	c := diskApp(t, Options{DataDir: filepath.Join(base, "cfg"), FilesDir: disk, Disks: disk})
+	d0 := c.call("GET", "/api/disks", nil, 200)["disks"].([]any)[0].(map[string]any)
+	if d0["cloudRoot"] != true {
+		t.Errorf("disk = %v", d0)
+	}
+	c.call("GET", "/api/disks/list?disk="+q(disk)+"&path=", nil, 409)
+	c.call("GET", "/api/disks/download?disk="+q(disk)+"&path=a.txt", nil, 409)
+
+	// Switched off.
+	off := diskApp(t, Options{DataDir: filepath.Join(t.TempDir(), "cfg"), Disks: "off"})
+	r := off.call("GET", "/api/disks", nil, 200)
+	if len(r["disks"].([]any)) != 0 || r["off"] != true {
+		t.Errorf("off = %v", r)
+	}
+	off.call("GET", "/api/disks/list?disk="+q(disk)+"&path=", nil, 404)
+
+	// A disk that holds the configuration at its top, or lies inside it, is not offered.
+	base2 := t.TempDir()
+	os.MkdirAll(filepath.Join(base2, "inner"), 0o755)
+	hid := diskApp(t, Options{DataDir: base2, Disks: base2 + "," + filepath.Join(base2, "inner") + ", relative/path ,"})
+	if got := hid.call("GET", "/api/disks", nil, 200)["disks"].([]any); len(got) != 0 {
+		t.Errorf("disks around the configuration = %v", got)
+	}
+
+	// Found automatically: whatever it finds, the configuration is not in it.
+	auto := diskApp(t, Options{DataDir: filepath.Join(t.TempDir(), "cfg")})
+	for _, d := range auto.call("GET", "/api/disks", nil, 200)["disks"].([]any) {
+		t.Logf("automatically found disk: %v", d.(map[string]any)["path"])
 	}
 }

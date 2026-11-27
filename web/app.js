@@ -26,7 +26,7 @@ const NAV = [
   {id:'doc',label:'文档',icon:'doc'},{id:'audio',label:'音乐',icon:'audio'},
   {id:'trash',label:'回收站',icon:'trash'},
   null,
-  {id:'mounts',label:'外部网盘',icon:'cloud'},{id:'downloads',label:'离线下载',icon:'download'},
+  {id:'disks',label:'磁盘文件',icon:'disk'},{id:'mounts',label:'外部网盘',icon:'cloud'},{id:'downloads',label:'离线下载',icon:'download'},
   {id:'dav',label:'WebDAV 同步',icon:'sync'},
   {id:'ext',label:'扩展',icon:'apps'},{id:'settings',label:'设置',icon:'sliders'}
 ];
@@ -36,7 +36,7 @@ const NO_PREVIEW = /\.(svg|heic|heif|tiff?)$/i;
 
 const S = {
   nav:'files', cwd:'', view:'grid', sel:new Set(), q:'', link:null, mount:null, mpath:'',
-  entries:[], trash:[], trashDays:30, dav:[], davNew:null, spaces:[], space:null, settings:null, links:[], mounts:[], downloads:[], uploads:[], checks:{},
+  entries:[], trash:[], trashDays:30, dav:[], davNew:null, spaces:[], space:null, disks:[], disk:null, diskInfo:null, disksOff:false, truncated:false, settings:null, links:[], mounts:[], downloads:[], uploads:[], checks:{},
   storage:null, error:'', authed:false, editLink:null, editMount:null
 };
 
@@ -115,6 +115,7 @@ async function start(){
 
 /* ---------- 数据加载 ---------- */
 function kind(){
+  if(inDisk()) return 'disk';
   if(S.q) return 'local';
   if(S.nav === 'trash') return 'trash';
   if(S.nav === 'mounts' && S.mount) return 'mount';
@@ -125,6 +126,13 @@ function kind(){
 const inSpace = () => S.nav === 'dav' && !!S.space;
 const sp = () => inSpace() ? '&space=' + enc(S.space) : '';
 const spq = () => inSpace() ? '?space=' + enc(S.space) : '';
+// 磁盘文件：打开某块磁盘后，直接读磁盘上的内容（只读），路径相对于磁盘的最上层。
+const inDisk = () => S.nav === 'disks' && !!S.disk;
+const dq = () => 'disk=' + enc(S.disk);
+const diskLabel = () => { const d = S.diskInfo && S.diskInfo.id === S.disk ? S.diskInfo : S.disks.find(x => x.id === S.disk); return d ? d.name : S.disk; };
+// 一个文件的下载地址；inline 表示在页面里预览
+const fileUrl = (e, inline) => inDisk() ? `/api/disks/download?${dq()}&path=${enc(e.path)}${inline ? '&inline=1' : ''}`
+  : `/api/files/download?${inline ? 'inline=1&' : ''}path=${enc(e.path)}${sp()}`;
 const browsing = () => (S.nav === 'files' || inSpace()) && !S.q;
 function current(){
   if(kind() !== 'trash') return S.entries;
@@ -143,7 +151,9 @@ async function load(){
   const seq = ++loadSeq;
   let err = '';
   try {
-    if(S.q) S.entries = (await api('GET', '/api/files/find?q=' + enc(S.q) + sp())).entries;
+    if(inDisk() && S.q){ const r = await api('GET', `/api/disks/find?${dq()}&path=${enc(S.cwd)}&q=` + enc(S.q)); S.entries = r.entries; S.truncated = !!r.truncated; S.diskInfo = r.disk; }
+    else if(inDisk()){ S.truncated = false; const r = await api('GET', `/api/disks/list?${dq()}&path=` + enc(S.cwd)); S.entries = r.entries; S.diskInfo = r.disk; }
+    else if(S.q) S.entries = (await api('GET', '/api/files/find?q=' + enc(S.q) + sp())).entries;
     else if(S.nav === 'files') S.entries = (await api('GET', '/api/files/list?path=' + enc(S.cwd))).entries;
     else if(S.nav === 'recent') S.entries = (await api('GET', '/api/files/find?recent=1')).entries;
     else if(LOCAL.includes(S.nav)) S.entries = (await api('GET', '/api/files/find?type=' + S.nav)).entries;
@@ -152,6 +162,7 @@ async function load(){
       S.mounts = (await api('GET', '/api/mounts')).mounts;
       if(S.mount){ S.entries = []; S.entries = (await api('GET', `/api/mounts/${S.mount}/list?path=` + enc(S.mpath))).entries; }
     }
+    else if(S.nav === 'disks'){ const r = await api('GET', '/api/disks'); S.disks = r.disks; S.disksOff = !!r.off; }
     else if(S.nav === 'downloads') S.downloads = (await api('GET', '/api/downloads')).downloads;
     else if(inSpace()) S.entries = (await api('GET', '/api/files/list?path=' + enc(S.cwd) + sp())).entries;
     else if(S.nav === 'dav'){ S.dav = (await api('GET', '/api/dav')).keys; S.spaces = (await api('GET', '/api/spaces')).spaces; }
@@ -169,7 +180,7 @@ function go(patch){
   renderSide();
   return load();
 }
-function navTo(patch){ closeSide(); return go(Object.assign({cwd:'', q:'', mount:null, mpath:'', link:null, davNew:null, space:null}, patch)); }
+function navTo(patch){ closeSide(); return go(Object.assign({cwd:'', q:'', mount:null, mpath:'', link:null, davNew:null, space:null, disk:null}, patch)); }
 
 /* ---------- 侧栏 ---------- */
 function renderSide(){
@@ -195,10 +206,15 @@ function closeSide(){ $('side').classList.remove('open'); $('scrim').hidden = tr
 
 /* ---------- 文件列表（本机 / 回收站 / 外部网盘共用） ---------- */
 function crumbs(){
-  if(S.q) return `<span class="cur">搜索“${esc(S.q)}”</span>`;
   const trail = (segs, attr) => segs.map((s,i) => SEP + (i === segs.length - 1
     ? `<span class="cur">${esc(s)}</span>`
     : `<button ${attr}="${esc(segs.slice(0, i+1).join('/'))}">${esc(s)}</button>`)).join('');
+  if(inDisk()){
+    const segs = S.cwd ? S.cwd.split('/') : [], name = esc(diskLabel()), top = '<button data-nav="disks">磁盘文件</button>' + SEP;
+    if(S.q) return top + `<button data-dcd="${esc(S.cwd)}">${S.cwd ? esc(segs[segs.length - 1]) : name}</button>` + SEP + `<span class="cur">搜索“${esc(S.q)}”</span>`;
+    return top + (segs.length ? `<button data-dcd="">${name}</button>` : `<span class="cur">${name}</span>`) + trail(segs, 'data-dcd');
+  }
+  if(S.q) return `<span class="cur">搜索“${esc(S.q)}”</span>`;
   if(inSpace()){
     const segs = S.cwd ? S.cwd.split('/') : [], name = esc(S.space);
     return '<button data-nav="dav">WebDAV 同步</button>' + SEP +
@@ -219,16 +235,16 @@ function crumbs(){
 }
 function thumbOf(e){
   if(e.dir) return FOLDER;
-  if(kind() === 'local' && e.type === 'image' && e.size < 4 * 2**20 && !NO_PREVIEW.test(e.name))
-    return `<img class="pic" src="/api/files/download?inline=1&path=${enc(e.path)}${sp()}" alt="" loading="lazy">`;
+  if((kind() === 'local' || kind() === 'disk') && e.type === 'image' && e.size < 4 * 2**20 && !NO_PREVIEW.test(e.name))
+    return `<img class="pic" src="${fileUrl(e, true)}" alt="" loading="lazy">`;
   return `<div class="tile t-${e.type}">${icon(TYPES[e.type].icon)}</div>`;
 }
-const metaOf = e => e.dir ? '文件夹' : fmtSize(e.size);
+const metaOf = e => e.cloud ? '云盘存储位置' : e.dir ? '文件夹' : fmtSize(e.size);
 // An empty top level usually means the files directory points at a new, empty
 // folder rather than at the disk that already holds the data. Say which one it is.
 function rootHint(){
   if(S.cwd !== '' || !S.storage || !S.storage.dir || inSpace()) return '';
-  return `<div class="sub" style="margin-top:10px">“全部文件”对应服务器上的目录 ${esc(S.storage.dir)}。<br>想管理硬盘上已有的文件，请把服务设置里的“文件目录”改成硬盘的挂载点。</div>`;
+  return `<div class="sub" style="margin-top:10px">“全部文件”对应服务器上的目录 ${esc(S.storage.dir)}。<br>只想查看硬盘上已有的文件，点左侧的“磁盘文件”。想在这里管理它们，到“设置”里把存储位置改成硬盘的挂载点。</div>`;
 }
 
 /* 回收站的自动清除设置 */
@@ -257,16 +273,17 @@ function renderEntries(){
     let acts;
     if(k === 'trash') acts = `<button class="btn sm" data-act="restore">${icon('restore')}还原</button><button class="btn sm" data-act="purge">${icon('trash')}彻底删除</button>`;
     else if(k === 'mount') acts = `<button class="btn sm" data-act="download">${icon('download')}下载</button><button class="btn sm" data-act="save-nas">${icon('plus')}保存到 NAS</button>`;
+    else if(k === 'disk') acts = `<button class="btn sm" data-act="download">${icon('download')}下载</button>`;
     else acts = `<button class="btn sm" data-act="download">${icon('download')}下载</button>` +
       (S.sel.size === 1 ? `<button class="btn sm" data-act="rename">${icon('edit')}重命名</button>` : '') +
       `<button class="btn sm" data-act="delete">${icon('trash')}删除</button>`;
     h += `<div class="selbar"><b>已选 ${S.sel.size} 项</b>${acts}<button class="btn sm sp" data-act="clear">取消选择</button></div>`;
   } else {
-    const note = k === 'trash' ? ' · ' + (S.trashDays > 0 ? `删除满 ${S.trashDays} 天后自动清除` : '不会自动清除') + '，还原后回到原来的位置' : k === 'mount' ? ' · 外部网盘为只读，可下载或保存到 NAS' : inSpace() ? ' · 同步空间里的内容不会出现在“全部文件”、分类和搜索里' : '';
+    const note = k === 'trash' ? ' · ' + (S.trashDays > 0 ? `删除满 ${S.trashDays} 天后自动清除` : '不会自动清除') + '，还原后回到原来的位置' : k === 'mount' ? ' · 外部网盘为只读，可下载或保存到 NAS' : k === 'disk' ? (S.q ? (S.truncated ? ' · 内容较多，只搜索了一部分。进入更具体的文件夹再搜，结果更完整' : ' · 在当前文件夹及其子文件夹里搜索') : ' · 磁盘文件为只读：可以浏览、预览和下载') : inSpace() ? ' · 同步空间里的内容不会出现在“全部文件”、分类和搜索里' : '';
     h += `<div class="count">共 ${list.length} 项${note}</div>`;
   }
   if(S.error) h += `<div class="empty">${esc(S.error)}</div>`;
-  else if(!list.length) h += `<div class="empty">${S.q ? '没有找到匹配的文件' : k === 'trash' ? '回收站是空的' : k === 'mount' ? '这个目录是空的' : (S.nav === 'files' || inSpace()) ? '这个文件夹是空的，点击右上角“上传”或把文件拖到这里' + rootHint() : '还没有这类文件'}</div>`;
+  else if(!list.length) h += `<div class="empty">${S.q ? '没有找到匹配的文件' : k === 'trash' ? '回收站是空的' : k === 'mount' ? '这个目录是空的' : k === 'disk' ? '这个文件夹是空的' : (S.nav === 'files' || inSpace()) ? '这个文件夹是空的，点击右上角“上传”或把文件拖到这里' + rootHint() : '还没有这类文件'}</div>`;
   else if(S.view === 'grid'){
     h += '<div class="grid">' + list.map(e =>
       `<div class="card ${S.sel.has(e.path) ? 'sel' : ''}" data-key="${esc(e.path)}" title="${esc(e.name)}">${ck}
@@ -285,8 +302,8 @@ function renderDetail(){
   const e = k && S.sel.size === 1 ? current().find(x => x.path === [...S.sel][0]) : null;
   if(!e){ el.hidden = true; el.innerHTML = ''; return; }
   let preview = '';
-  if(k === 'local' && !e.dir){
-    const src = `/api/files/download?inline=1&path=${enc(e.path)}${sp()}`;
+  if((k === 'local' || k === 'disk') && !e.dir){
+    const src = fileUrl(e, true);
     if(e.type === 'image' && !NO_PREVIEW.test(e.name)) preview = `<div class="preview"><img src="${src}" alt="" data-preview="${esc(e.path)}" title="点击查看大图"></div>`;
     else if(e.type === 'video') preview = `<div class="preview"><video src="${src}" controls preload="metadata"></video></div>`;
     else if(e.type === 'audio') preview = `<div class="preview"><audio src="${src}" controls preload="none"></audio></div>`;
@@ -297,6 +314,11 @@ function renderDetail(){
   if(k === 'trash'){
     loc = '全部文件' + (parent(e.orig) ? ' / ' + parent(e.orig).split('/').join(' / ') : '');
     actions = `<button class="btn sm primary" data-act="restore">${icon('restore')}还原</button><button class="btn sm" data-act="purge">彻底删除</button>`;
+  } else if(k === 'disk'){
+    loc = '磁盘文件 / ' + diskLabel() + (parent(e.path) ? ' / ' + parent(e.path).split('/').join(' / ') : '');
+    actions = e.cloud ? `<button class="btn sm primary" data-nav="files">到“全部文件”里查看</button>`
+      : e.dir ? `<button class="btn sm primary" data-dcd="${esc(e.path)}">打开</button>`
+      : `<a class="btn sm primary" href="${fileUrl(e)}" download>${icon('download')}下载</a>`;
   } else if(k === 'mount'){
     const m = S.mounts.find(x => x.id === S.mount);
     loc = (m ? m.name : '网盘') + (parent(e.path) ? ' / ' + parent(e.path).split('/').join(' / ') : '');
@@ -305,7 +327,7 @@ function renderDetail(){
   } else {
     loc = (inSpace() ? '同步空间 / ' + S.space : '全部文件') + (parent(e.path) ? ' / ' + parent(e.path).split('/').join(' / ') : '');
     actions = (e.dir ? `<button class="btn sm primary" ${inSpace() ? 'data-scd' : 'data-cd'}="${esc(e.path)}">打开</button>`
-      : `<a class="btn sm primary" href="/api/files/download?path=${enc(e.path)}${sp()}" download>${icon('download')}下载</a>`) +
+      : `<a class="btn sm primary" href="${fileUrl(e)}" download>${icon('download')}下载</a>`) +
       `<button class="btn sm" data-act="rename">重命名</button><button class="btn sm" data-act="delete">删除</button>`;
   }
   el.hidden = false;
@@ -314,6 +336,25 @@ function renderDetail(){
     <dl class="kv"><dt>类型</dt><dd>${TYPES[e.type].label}</dd><dt>大小</dt><dd>${metaOf(e)}</dd>
     <dt>${k === 'trash' ? '删除时间' : '修改时间'}</dt><dd>${fmtDate(e.mtime)}</dd><dt>${k === 'trash' ? '原位置' : '位置'}</dt><dd>${esc(loc)}</dd>${k === 'trash' ? `<dt>自动清除</dt><dd>${expiryText(e)}</dd>` : ''}</dl>
     <div class="detail-actions">${actions}</div>`;
+}
+
+/* ---------- 磁盘文件 ---------- */
+function renderDisks(){
+  let h = `<div class="page-title">磁盘文件<span class="sub">直接查看磁盘上的内容 · 只读</span></div>
+    <div class="count">这里显示接在这台设备上的磁盘本身的内容，从磁盘的最上层开始。只能浏览、预览和下载，不会改动磁盘上的任何东西。云盘自己的文件仍然在“全部文件”里管理，不会在这里重复出现。</div>`;
+  if(S.error) h += `<div class="empty">${esc(S.error)}</div>`;
+  else if(!S.disks.length) h += `<div class="empty">${S.disksOff ? '“磁盘文件”已经在服务设置里关闭' : '没有发现磁盘<div class="sub" style="margin-top:10px">请确认硬盘已经接好并且已经挂载（例如挂载在 /mnt/sda1）。<br>系统自己所在的盘不会显示在这里。</div>'}</div>`;
+  else h += '<div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">' + S.disks.map(d => {
+    const pct = d.total ? Math.round((d.total - d.free) / d.total * 100) : 0;
+    const usage = d.total ? `<div class="meter" role="img" aria-label="已用 ${pct}%"><i style="width:${pct}%"></i></div>
+      <div class="line mt"><span>共 ${fmtSize(d.total)}</span><span>剩余 ${fmtSize(d.free)}</span></div>` : '';
+    const where = d.cloudRoot ? '<div class="note">这块磁盘就是云盘的存储位置，上面的内容都在“全部文件”里。</div>'
+      : d.cloudPath ? `<div class="note">云盘的存储位置是这块磁盘上的“${esc(d.cloudPath)}”文件夹，那一部分在“全部文件”里管理。</div>` : '';
+    return `<div class="panel" data-diskcard="${esc(d.id)}"><div class="dev-head"><div class="avatar">${icon('disk')}</div><div style="min-width:0"><h4 class="ell">${esc(d.name)}</h4><div class="sub ell" title="${esc(d.path)}">${esc(d.path)}</div></div></div>
+      ${usage}<div class="taglist"><span class="tag">只读</span>${d.fs ? `<span class="tag">${esc(d.fs)}</span>` : ''}${d.cloudRoot ? '<span class="tag">云盘存储位置</span>' : ''}</div>${where}
+      <div class="detail-actions mt">${d.cloudRoot ? '<button class="btn sm primary" data-nav="files">打开“全部文件”</button>' : `<button class="btn sm primary" data-disk="${esc(d.id)}">打开</button>`}</div></div>`;
+  }).join('') + '</div>';
+  $('main').innerHTML = h;
 }
 
 /* ---------- 外部网盘 ---------- */
@@ -470,6 +511,7 @@ const linkBody = l => ({name:l.name, url:l.url, desc:l.desc, mode:l.mode, proxy:
 /* ---------- 上传 ---------- */
 const upQueue = []; let upBusy = false;
 function queueUploads(files){
+  if(S.nav === 'disks'){ toast('“磁盘文件”是只读的。要上传，请先到“全部文件”'); return; }
   const here = browsing(), dir = here ? S.cwd : '', space = here && inSpace() ? S.space : null;
   for(const f of files){ const u = {name:f.name, file:f, dir, space, pct:0, state:'wait', err:''}; S.uploads.unshift(u); upQueue.push(u); }
   if(!files.length) return;
@@ -549,7 +591,7 @@ function renderViewer(){
   const e = V.list[V.i], stage = $('vwStage');
   $('vwName').textContent = e.name;
   $('vwCount').textContent = V.list.length > 1 ? `${V.i + 1} / ${V.list.length}` : '';
-  $('vwDownload').href = `/api/files/download?path=${enc(e.path)}${sp()}`;
+  $('vwDownload').href = fileUrl(e);
   $('vwDownload').setAttribute('download', e.name);
   $('vwPrev').hidden = $('vwNext').hidden = V.list.length < 2;
   stage.innerHTML = '';
@@ -560,7 +602,7 @@ function renderViewer(){
     stage.innerHTML = `<div class="viewer-msg">浏览器无法直接预览这个 ${esc(ext)}文件。<br>点右上角的下载按钮，下载后查看。</div>`;
   });
   if(e.type === 'image') el.alt = e.name; else { el.controls = true; el.autoplay = true; }
-  el.src = `/api/files/download?inline=1&path=${enc(e.path)}${sp()}`;
+  el.src = fileUrl(e, true);
   stage.appendChild(el);
 }
 $('vwClose').addEventListener('click', closeViewer);
@@ -753,6 +795,7 @@ function render(){
   renderSide();
   if(kind()) renderEntries();
   else if(S.nav === 'mounts') renderMounts();
+  else if(S.nav === 'disks') renderDisks();
   else if(S.nav === 'downloads') renderDownloads();
   else if(S.nav === 'dav') renderDav();
   else if(S.nav === 'settings') renderSettings();
@@ -766,7 +809,7 @@ function downloadSelected(){
   if(!files.length){ toast('暂不支持下载整个文件夹'); return; }
   files.forEach((e, i) => setTimeout(() => {
     const a = document.createElement('a');
-    a.href = k === 'mount' ? `/api/mounts/${S.mount}/download?path=${enc(e.path)}` : `/api/files/download?path=${enc(e.path)}${sp()}`;
+    a.href = k === 'mount' ? `/api/mounts/${S.mount}/download?path=${enc(e.path)}` : fileUrl(e);
     a.download = e.name; document.body.appendChild(a); a.click(); a.remove();
   }, i * 400));
   if(files.length < S.sel.size) toast('已跳过文件夹，暂不支持下载整个文件夹');
@@ -887,6 +930,8 @@ document.addEventListener('click', e => {
   const scd = t.closest('[data-scd]'); if(scd){ go({cwd:scd.dataset.scd, q:''}); return; }
   const so = t.closest('[data-space]'); if(so){ closeSide(); go({nav:'dav', space:so.dataset.space, cwd:'', q:'', davNew:null}); return; }
   const cd = t.closest('[data-cd]'); if(cd){ navTo({nav:'files', cwd:cd.dataset.cd}); return; }
+  const dcd = t.closest('[data-dcd]'); if(dcd){ go({cwd:dcd.dataset.dcd, q:''}); return; }
+  const dk = t.closest('[data-disk]'); if(dk){ closeSide(); go({nav:'disks', disk:dk.dataset.disk, diskInfo:null, cwd:'', q:''}); return; }
   const mcd = t.closest('[data-mcd]'); if(mcd){ go({mpath:mcd.dataset.mcd}); return; }
   const mt = t.closest('[data-mount]'); if(mt){ go({nav:'mounts', mount:mt.dataset.mount, mpath:'', q:''}); return; }
   const cp = t.closest('[data-copy]'); if(cp){ copyText(cp.dataset.copy).then(done => toast(done ? '已复制' : '复制失败，请手动选中后复制')); return; }
@@ -899,8 +944,9 @@ document.addEventListener('click', e => {
     if(!entry) return;
     if(t.closest('[data-ck]')){ S.sel.has(key) ? S.sel.delete(key) : S.sel.add(key); }
     else if(entry.dir && k === 'mount'){ go({mpath:entry.path}); return; }
+    else if(entry.dir && k === 'disk'){ if(entry.cloud) navTo({nav:'files'}); else go({cwd:entry.path, q:''}); return; }
     else if(entry.dir && k === 'local'){ if(inSpace()) go({cwd:entry.path, q:''}); else navTo({nav:'files', cwd:entry.path}); return; }
-    else if(k === 'local' && previewable(entry)){ openViewer(entry); return; }   // 图片、视频、音频：点开预览；要选中请点左上角的方框
+    else if((k === 'local' || k === 'disk') && previewable(entry)){ openViewer(entry); return; }   // 图片、视频、音频：点开预览；要选中请点左上角的方框
     else if(S.sel.size === 1 && S.sel.has(key)) S.sel.clear();
     else S.sel = new Set([key]);
     render();

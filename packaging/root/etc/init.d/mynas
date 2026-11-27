@@ -5,7 +5,7 @@ STOP=10
 USE_PROCD=1
 
 start_service() {
-	local enabled port data_dir files_dir require_mount proxy_ports min_free
+	local enabled port data_dir files_dir require_mount proxy_ports min_free disks
 
 	config_load mynas
 	config_get_bool enabled main enabled 1
@@ -17,13 +17,14 @@ start_service() {
 	config_get_bool require_mount main require_mount 0
 	config_get proxy_ports main proxy_ports 18600-18649
 	config_get min_free main min_free 64
+	config_get disks main disks auto
 
 	mkdir -p "$data_dir" || return 1
 
 	procd_open_instance
 	# run.sh waits for the disk when require_mount is set, then execs mynas.
 	procd_set_param command /bin/sh /usr/share/mynas/run.sh "$require_mount" "$files_dir" \
-		-addr ":$port" -data "$data_dir" -proxy-ports "$proxy_ports" -min-free "$min_free" \
+		-addr ":$port" -data "$data_dir" -proxy-ports "$proxy_ports" -min-free "$min_free" -disks "$disks" \
 		-files-hook /usr/share/mynas/set-files.sh
 	procd_set_param respawn 3600 5 5
 	procd_set_param stdout 1

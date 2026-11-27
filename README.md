@@ -17,6 +17,7 @@ go build -o mynas .
 | `-data` | `MYNAS_DATA` | `data` | 数据目录，存配置 `state.json` |
 | `-files` | `MYNAS_FILES` | `<数据目录>/files` | 文件目录，可以单独放到大容量磁盘上 |
 | `-min-free` | `MYNAS_MIN_FREE` | `64` | 文件所在磁盘至少保留的空闲空间（MB），低于它时拒绝上传和下载 |
+| `-disks` | `MYNAS_DISKS` | `auto` | “磁盘文件”区域显示哪些磁盘：`auto` 自动发现已挂载的数据盘（Linux 读 `/proc/self/mounts`，Windows 取系统盘以外的盘符），`off` 关闭，或用逗号分隔的目录列表（例如 Docker 里挂进来的目录） |
 | `-proxy-ports` | `MYNAS_PROXY_PORTS` | `18600-18649` | 外部链接代理内嵌使用的端口范围 |
 | `-files-hook` | `MYNAS_FILES_HOOK` | | 在管理界面更改存储位置时执行的命令，参数是新目录。OpenWrt 包用它把选择写回 UCI；不设时选择保存在 `state.json` 里，并优先于 `-files` |
 | `-version` | | | 显示版本号 |
@@ -47,8 +48,8 @@ ssh root@192.168.1.1 sh /tmp/mynas/install.sh
 | `arm_` | `arm` | 32 位 ARM（IPQ40xx、mvebu 等） |
 
 ```sh
-opkg install /tmp/mynas_0.1.8-1_aarch64.ipk                    # OpenWrt 24.10 及更早
-apk add --allow-untrusted /tmp/mynas-0.1.8-r1_aarch64.apk      # OpenWrt 25.12 及更新
+opkg install /tmp/mynas_0.1.9-1_aarch64.ipk                    # OpenWrt 24.10 及更早
+apk add --allow-untrusted /tmp/mynas-0.1.9-r1_aarch64.apk      # OpenWrt 25.12 及更新
 ```
 
 装错处理器的包不会启动服务，并会提示换包。安装包没有签名，所以 apk 需要 `--allow-untrusted`。
@@ -67,7 +68,7 @@ apk add --allow-untrusted /tmp/mynas-0.1.8-r1_aarch64.apk      # OpenWrt 25.12 �
 ### 重新打包
 
 ```sh
-go run ./packaging/mkpkg -version 0.1.8
+go run ./packaging/mkpkg -version 0.1.9
 ```
 
 `.ipk` 由这个工具直接生成；`.apk` 需要 Docker（用来运行 `apk mkpkg`），加 `-apk=off` 可以跳过。安装包内容在 `packaging/root/`，安装脚本在 `packaging/scripts/`。
@@ -75,6 +76,7 @@ go run ./packaging/mkpkg -version 0.1.8
 ## 已实现
 
 - **文件**：浏览、上传（含拖拽）、下载、新建文件夹、重命名、搜索、按类型和最近查看、点击图片/视频/音频全屏预览（可左右切换）、回收站（还原、彻底删除、到期自动清除，默认删除满 30 天，可改或关闭）。
+- **磁盘文件**：独立的只读区域，直接读取已挂载磁盘从最上层开始的全部内容，可浏览、搜索、预览和下载；云盘自己的存储位置在其中只显示为一个入口，不重复列出；配置目录不可见；每块磁盘用 `os.Root` 限定，符号链接不能带出磁盘。可用 `-disks off` 关闭。
 - **扩展 · 外部链接**：添加、编辑、固定到侧栏、检测是否可访问和可内嵌；页面内打开或新窗口打开；对禁止内嵌的网站可开启 NAS 代理内嵌。
 - **设置 · 管理员账号**：在管理界面里修改管理员的用户名和密码；需要输入当前密码；修改后其他会话全部退出，当前会话保留。
 - **设置 · 存储位置**：在管理界面里更改文件目录，带文件夹浏览；需要再次输入管理员密码；在线切换，不重启、不掉登录；旧位置的文件、回收站和同步空间原地保留，换回去后重新出现。

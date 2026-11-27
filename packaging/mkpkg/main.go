@@ -4,7 +4,7 @@
 //
 // Run it from the repository root:
 //
-//	go run ./packaging/mkpkg -version 0.1.8
+//	go run ./packaging/mkpkg -version 0.1.9
 //
 // The .ipk files are written by this program alone. The .apk files need the
 // "apk mkpkg" tool, which is run in a container, so Docker must be available
@@ -63,7 +63,7 @@ type file struct {
 }
 
 func main() {
-	version := flag.String("version", "0.1.8", "package version")
+	version := flag.String("version", "0.1.9", "package version")
 	release := flag.Int("release", 1, "package release number")
 	out := flag.String("out", "dist", "output directory")
 	only := flag.String("only", "", "comma-separated CPU names to build (default: all)")
