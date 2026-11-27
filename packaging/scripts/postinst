@@ -1,0 +1,38 @@
+#!/bin/sh
+# Runs on the router after install or upgrade: apply first-run defaults,
+# refresh LuCI, then enable and (re)start the service.
+# @PATTERN@ and @CPU@ are filled in by mkpkg.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+# A build for another CPU family cannot run here. opkg refuses it in preinst
+# already; apk has no step that can abort an install, so check again here and
+# leave the service off.
+if [ -f /etc/openwrt_release ]; then
+	. /etc/openwrt_release
+	case "$DISTRIB_ARCH" in
+		@PATTERN@) ;;
+		*)
+			echo "mynas: this package is built for @CPU@ CPUs, but this device is $DISTRIB_ARCH." >&2
+			echo "mynas: 这个安装包适用于 @CPU@ 处理器，这台设备是 $DISTRIB_ARCH。" >&2
+			echo "mynas: 请先卸载（apk del mynas 或 opkg remove mynas），再安装对应的安装包。" >&2
+			exit 1
+			;;
+	esac
+fi
+
+if [ -f /etc/uci-defaults/90-mynas ]; then
+	( . /etc/uci-defaults/90-mynas ) && rm -f /etc/uci-defaults/90-mynas
+fi
+
+# On upgrade opkg drops the package's default config next to the user's one.
+# The init script has its own defaults, so the copy is only clutter.
+rm -f /etc/config/mynas-opkg
+
+rm -f /tmp/luci-indexcache /tmp/luci-indexcache.*
+rm -rf /tmp/luci-modulecache
+[ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload >/dev/null 2>&1
+
+/etc/init.d/mynas enable
+/etc/init.d/mynas restart
+exit 0

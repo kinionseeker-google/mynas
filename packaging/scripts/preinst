@@ -1,0 +1,15 @@
+#!/bin/sh
+# Refuse to install a build made for a different CPU family.
+# @PATTERN@ and @CPU@ are filled in by mkpkg.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+[ -f /etc/openwrt_release ] || exit 0
+. /etc/openwrt_release
+
+case "$DISTRIB_ARCH" in
+	@PATTERN@) exit 0 ;;
+esac
+
+echo "mynas: this package is built for @CPU@ CPUs, but this device is $DISTRIB_ARCH." >&2
+echo "mynas: 这个安装包适用于 @CPU@ 处理器，这台设备是 $DISTRIB_ARCH，请换用对应的安装包。" >&2
+exit 1

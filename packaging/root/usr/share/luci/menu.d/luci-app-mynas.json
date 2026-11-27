@@ -1,0 +1,14 @@
+{
+	"admin/services/mynas": {
+		"title": "黑曜石云盘",
+		"order": 60,
+		"action": {
+			"type": "view",
+			"path": "mynas"
+		},
+		"depends": {
+			"acl": [ "luci-app-mynas" ],
+			"uci": { "mynas": true }
+		}
+	}
+}

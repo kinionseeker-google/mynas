@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs on the router before the package is removed.
+
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+
+/etc/init.d/mynas stop >/dev/null 2>&1
+/etc/init.d/mynas disable >/dev/null 2>&1
+exit 0

@@ -1,0 +1,11 @@
+#!/bin/sh
+# When the disk holding the files directory goes away, restart mynas so it
+# waits for the disk again instead of writing into a stale directory.
+
+[ "$ACTION" = remove ] || exit 0
+/etc/init.d/mynas enabled || exit 0
+[ "$(uci -q get mynas.main.require_mount)" = 1 ] || exit 0
+
+files_dir="$(uci -q get mynas.main.files_dir)"
+/bin/sh /usr/share/mynas/run.sh check "$files_dir" && exit 0
+/etc/init.d/mynas restart

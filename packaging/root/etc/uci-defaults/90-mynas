@@ -1,0 +1,22 @@
+#!/bin/sh
+# First install: when an external disk is mounted, manage that disk directly,
+# so the files already on it show up in the web UI.
+
+[ -n "$(uci -q get mynas.main.files_dir)" ] && exit 0
+
+dir=""
+for mp in $(awk '$2 ~ /^\/mnt\// {print $2}' /proc/mounts); do
+	dir="$mp"
+	break
+done
+
+if [ -n "$dir" ]; then
+	uci -q set mynas.main.files_dir="$dir"
+	uci -q set mynas.main.require_mount=1
+else
+	# No disk yet: start anyway. The free-space floor keeps the flash from filling up.
+	uci -q set mynas.main.files_dir=/mnt/mynas
+	uci -q set mynas.main.require_mount=0
+fi
+uci commit mynas
+exit 0

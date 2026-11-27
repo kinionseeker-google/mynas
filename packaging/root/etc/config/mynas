@@ -1,0 +1,9 @@
+
+config mynas 'main'
+	option enabled '1'
+	option port '8580'
+	option data_dir '/etc/mynas'
+	option files_dir ''
+	option require_mount '0'
+	option proxy_ports '18600-18649'
+	option min_free '64'

@@ -1,0 +1,17 @@
+{
+	"luci-app-mynas": {
+		"description": "Grant access to the mynas configuration and status",
+		"read": {
+			"uci": [ "mynas" ],
+			"ubus": {
+				"service": [ "list" ]
+			},
+			"file": {
+				"/var/run/mynas.state": [ "read" ]
+			}
+		},
+		"write": {
+			"uci": [ "mynas" ]
+		}
+	}
+}

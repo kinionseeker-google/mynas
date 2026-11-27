@@ -1,0 +1,10 @@
+services:
+  mynas:
+    build: .
+    container_name: mynas
+    restart: unless-stopped
+    ports:
+      - "8580:8580"                 # 管理页面
+      - "18600-18649:18600-18649"   # 外部链接的代理内嵌端口
+    volumes:
+      - ./data:/data                # files/ 存放文件，state.json 存放配置

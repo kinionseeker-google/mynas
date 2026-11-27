@@ -1,0 +1,98 @@
+/* 真实版本在原型样式之上增加的部分 */
+.auth{position:fixed;inset:0;display:grid;place-items:center;padding:16px;background:var(--bg);z-index:100;overflow:auto}
+.auth-card{width:360px;max-width:100%;padding:28px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.auth-card .brand{width:auto;margin-bottom:18px}
+.auth-card h2{margin:0 0 4px;font-size:20px}
+.auth-card .sub{margin:0 0 16px}
+.btn.wide{width:100%;justify-content:center;height:40px;border-radius:20px;margin-top:4px}
+.grow{flex:1}
+
+.pic{width:64px;height:64px;border-radius:12px;object-fit:cover;background:var(--hover)}
+.row .pic{width:28px;height:28px;border-radius:7px}
+.preview{margin:8px 0 14px;text-align:center}
+.preview img,.preview video{max-width:100%;max-height:260px;border-radius:12px;background:var(--hover)}
+.preview audio{width:100%}
+.main.drag{outline:2px dashed var(--accent);outline-offset:-8px}
+
+.field textarea{display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font:inherit;outline:0;resize:vertical;min-height:72px}
+.field textarea:focus{border-color:var(--accent)}
+.form-row{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.form-row .field{flex:1;min-width:180px;margin-bottom:0}
+.note{font-size:12px;color:var(--muted);margin-top:10px}
+
+.task{padding:14px 16px;margin-top:10px}
+.task-head{display:flex;align-items:center;gap:10px;min-width:0}
+.task-head .tile{width:36px;height:36px;border-radius:9px;flex:none}
+.task-head .tile .ic{width:18px;height:18px}
+.task-name{flex:1;min-width:0}
+.task-name b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.task .meter{height:6px;margin:10px 0 6px}
+.task-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.task-foot .sp{margin-left:auto;display:flex;gap:6px}
+.st{display:inline-flex;align-items:center;gap:5px;color:var(--ink)}
+.st .dot.bad{background:#d03b3b}
+.st .dot.run{background:var(--meter)}
+.task-err{color:#d03b3b;font-size:12px;margin-top:4px;word-break:break-all}
+:root[data-theme="dark"] .task-err{color:#f08080}
+
+.frame{height:calc(100vh - 206px)}
+.frame iframe{flex:1;width:100%;border:0;background:#fff}
+.frame-bar .linkbtn{margin-left:auto;color:var(--accent);font-size:13px;white-space:nowrap}
+.frame-note{padding:8px 14px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink2);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.nav-count{margin-left:auto;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:var(--on-accent);font-size:11px;line-height:18px;text-align:center}
+.check-ok{color:var(--ink)} .check-bad{color:#d03b3b}
+:root[data-theme="dark"] .check-bad{color:#f08080}
+.checkline{align-items:flex-start;line-height:1.4}
+.checkline input{margin-top:2px;flex:none}
+.mini{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2)}
+.mini select{height:30px;padding:0 8px;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;outline:0}
+.mini select:focus{border-color:var(--accent)}
+@media (max-width:760px){ .mini .lbl-wide{display:none} }
+
+/* 预览查看器：不随深浅色变化，始终是深色背景 */
+.viewer{position:fixed;inset:0;z-index:90;display:flex;flex-direction:column;background:rgba(10,12,16,.95);color:#f0f2f5}
+.viewer-bar{display:flex;align-items:center;gap:8px;height:52px;padding:0 10px 0 18px;flex:none}
+.viewer-name{flex:1;min-width:0;font-size:15px}
+.viewer-count{font-size:13px;color:#aab2bd;font-variant-numeric:tabular-nums;margin-right:6px;white-space:nowrap}
+.viewer .icon-btn{color:#f0f2f5}
+.viewer .icon-btn:hover{background:rgba(255,255,255,.14)}
+.viewer-stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:0 64px 24px;overflow:hidden}
+.viewer-stage img,.viewer-stage video{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px}
+.viewer-stage audio{width:min(560px,100%)}
+.viewer-msg{text-align:center;color:#c9d0d9;line-height:1.9}
+.viewer-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:#f0f2f5;background:rgba(255,255,255,.1)}
+.viewer-nav:hover{background:rgba(255,255,255,.22)}
+.viewer-nav.prev{left:10px}
+.viewer-nav.next{right:10px}
+.preview img[data-preview]{cursor:zoom-in}
+@media (max-width:760px){
+  .viewer-stage{padding:0 8px 72px}
+  .viewer-nav{top:auto;bottom:16px;transform:none}
+  .viewer-nav.prev{left:calc(50% - 56px)}
+  .viewer-nav.next{right:calc(50% - 56px)}
+}
+
+/* WebDAV 同步页面 */
+.kvline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0;font-size:13px}
+.kvline .sub{width:72px;flex:none}
+code{font-family:ui-monospace,Consolas,"Cascadia Mono",monospace;font-size:13px;background:var(--hover);padding:3px 8px;border-radius:6px;word-break:break-all}
+.guide summary{cursor:pointer;font-weight:600}
+.guide ol{margin:10px 0 0;padding-left:20px;line-height:1.9;font-size:13px;color:var(--ink2)}
+h3.sec{font-size:15px;margin:22px 2px 10px}
+h3.sec .sub{font-weight:400;margin-left:8px}
+
+/* 设置页面：存储位置 */
+dialog.wide{width:580px}
+.browser{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:12px}
+.b-roots{display:flex;gap:6px;flex-wrap:wrap}
+.b-path{display:flex;align-items:center;gap:8px;margin:10px 0 6px;font-size:13px;color:var(--ink2)}
+.b-path .ell{flex:1;min-width:0}
+.b-list{max-height:176px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:2px}
+.b-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;text-align:left;min-width:0;font-size:13px}
+.b-item:hover{background:var(--hover)}
+.b-item .fold{width:22px;height:22px;flex:none}
+.warnlist{margin:0 0 12px;padding-left:18px;font-size:12px;color:var(--ink2);line-height:1.75}
+.warnbox{border-color:#e0a030;margin-bottom:12px;font-size:13px}
+.tag.warn{background:rgba(224,160,48,.18);color:var(--ink)}
+.logo{background:none}
+.logo img{display:block;width:28px;height:28px}

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>黑曜石云盘</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="extra.css">
+</head>
+<body>
+<div class="app" id="app" hidden>
+  <header class="top">
+    <button class="icon-btn only-mobile" id="menuBtn" aria-label="打开菜单"></button>
+    <div class="brand"><span class="logo"><img src="favicon.svg" alt="" width="28" height="28"></span><span class="brand-name">黑曜石云盘</span></div>
+    <label class="search"><span id="searchIc"></span><input id="q" type="search" placeholder="搜索文件" aria-label="搜索文件"></label>
+    <div class="top-actions">
+      <button class="btn primary" id="uploadBtn"><span id="upIc"></span>上传</button>
+      <button class="icon-btn" id="transferBtn" aria-label="上传列表"></button>
+      <button class="icon-btn" id="themeBtn" aria-label="切换深色或浅色"></button>
+      <button class="icon-btn" id="logoutBtn" aria-label="退出登录" title="退出登录"></button>
+    </div>
+  </header>
+  <div class="body">
+    <nav class="side" id="side" aria-label="导航"></nav>
+    <main class="main" id="main"></main>
+    <aside class="detail" id="detail" hidden></aside>
+  </div>
+</div>
+
+<div class="auth" id="auth" hidden>
+  <form class="auth-card" id="authForm" novalidate>
+    <div class="brand"><span class="logo"><img src="favicon.svg" alt="" width="28" height="28"></span><span>黑曜石云盘</span></div>
+    <h2 id="authTitle">登录</h2>
+    <p class="sub" id="authHint"></p>
+    <label class="field">用户名<input type="text" id="auUser" autocomplete="username" maxlength="32"></label>
+    <label class="field">密码<input type="password" id="auPass" autocomplete="current-password"></label>
+    <div class="err" id="auErr" role="alert"></div>
+    <button type="submit" class="btn primary wide" id="auSubmit">登录</button>
+  </form>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<section class="transfer" id="transfer" hidden aria-label="上传列表"></section>
+<input type="file" id="filePick" multiple hidden>
+
+<dialog id="linkDlg" aria-labelledby="linkDlgTitle">
+  <form id="linkForm" novalidate>
+    <h3 id="linkDlgTitle">添加外部链接</h3>
+    <label class="field">名称<input type="text" id="lkName" maxlength="30" placeholder="例如：路由器后台"></label>
+    <label class="field">链接地址<input type="url" id="lkUrl" placeholder="http://192.168.1.1"></label>
+    <label class="field">说明（可选）<input type="text" id="lkDesc" maxlength="80"></label>
+    <label class="field">打开方式<select id="lkMode"><option value="embed">页面内打开</option><option value="new">新窗口打开</option></select></label>
+    <div id="lkEmbedOpts">
+      <label class="checkline"><input type="checkbox" id="lkProxy">通过 NAS 代理内嵌（网站禁止内嵌时开启）</label>
+      <label class="checkline"><input type="checkbox" id="lkInsecure">忽略对方的证书错误（仅用于自签名证书的局域网设备）</label>
+    </div>
+    <label class="checkline"><input type="checkbox" id="lkPin">固定到左侧导航</label>
+    <div class="err" id="lkErr" role="alert"></div>
+    <div class="dlg-actions"><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="mountDlg" aria-labelledby="mountDlgTitle">
+  <form id="mountForm" novalidate>
+    <h3 id="mountDlgTitle">添加外部网盘</h3>
+    <label class="field">名称<input type="text" id="mtName" maxlength="30" placeholder="例如：我的坚果云"></label>
+    <label class="field">WebDAV 地址<input type="url" id="mtUrl" placeholder="https://dav.example.com/dav/"></label>
+    <label class="field">账号（可选）<input type="text" id="mtUser" autocomplete="off"></label>
+    <label class="field">密码或应用密码<input type="password" id="mtPass" autocomplete="new-password"></label>
+    <label class="checkline"><input type="checkbox" id="mtInsecure">忽略对方的证书错误（仅用于自签名证书的局域网设备）</label>
+    <div class="err" id="mtErr" role="alert"></div>
+    <div class="dlg-actions"><button type="button" class="btn" id="mtTest">测试连接</button><span class="grow"></span><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="davDlg" aria-labelledby="davDlgTitle">
+  <form id="davForm" novalidate>
+    <h3 id="davDlgTitle">新建 WebDAV 访问密码</h3>
+    <label class="field">账号（字母、数字和 . _ -）<input type="text" id="dvUser" maxlength="32" autocomplete="off"></label>
+    <label class="field">存放位置<select id="dvWhere"><option value="space">独立的同步空间（推荐）</option><option value="folder">“全部文件”里的文件夹</option></select></label>
+    <label class="field"><span id="dvDirLabel">同步空间名称</span><input type="text" id="dvDir" maxlength="200"></label>
+    <label class="checkline"><input type="checkbox" id="dvRO">只读：只能下载，不能上传、修改或删除</label>
+    <div class="note" style="margin:0 0 6px" id="dvNote"></div>
+    <div class="err" id="dvErr" role="alert"></div>
+    <div class="dlg-actions"><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn primary">生成</button></div>
+  </form>
+</dialog>
+
+<dialog id="dirDlg" class="wide" aria-labelledby="dirDlgTitle">
+  <form id="dirForm" novalidate>
+    <h3 id="dirDlgTitle">更改存储位置</h3>
+    <label class="field">新的存储位置（完整路径；最后一级文件夹不存在时会新建）<input type="text" id="sdDir" autocomplete="off" spellcheck="false"></label>
+    <div class="browser" id="sdBrowser"></div>
+    <ul class="warnlist">
+      <li>现有的文件、回收站和同步空间留在原位置，<b>不会自动搬过去</b>。需要的话，请先自己把它们复制到新位置。</li>
+      <li>以后换回原位置，原来的内容会重新出现。</li>
+      <li>同步空间没有一起搬到新位置时，Obsidian 等软件会同步失败并报错，不会因此丢笔记。之后到“WebDAV 同步”页面处理。</li>
+      <li>有离线下载正在进行时不能更改。</li>
+    </ul>
+    <label class="field">管理员密码（确认是你本人在操作）<input type="password" id="sdPass" autocomplete="current-password"></label>
+    <div class="err" id="sdErr" role="alert"></div>
+    <div class="dlg-actions"><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn primary">更改</button></div>
+  </form>
+</dialog>
+
+<dialog id="acctDlg" aria-labelledby="acctDlgTitle">
+  <form id="acctForm" novalidate>
+    <h3 id="acctDlgTitle">修改管理员账号</h3>
+    <label class="field">用户名<input type="text" id="acUser" autocomplete="username" maxlength="32"></label>
+    <label class="field">当前密码<input type="password" id="acOld" autocomplete="current-password"></label>
+    <label class="field">新密码（至少 8 位；不改密码就留空）<input type="password" id="acNew" autocomplete="new-password"></label>
+    <label class="field">再输一次新密码<input type="password" id="acNew2" autocomplete="new-password"></label>
+    <div class="note" style="margin:0 0 6px">修改后，其他已经登录的浏览器会被退出，这个浏览器保持登录。</div>
+    <div class="err" id="acErr" role="alert"></div>
+    <div class="dlg-actions"><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn primary">保存</button></div>
+  </form>
+</dialog>
+
+<dialog id="nameDlg" aria-labelledby="nameDlgTitle">
+  <form id="nameForm" novalidate>
+    <h3 id="nameDlgTitle">名称</h3>
+    <label class="field"><span id="nameLabel">名称</span><input type="text" id="nmInput" maxlength="255"></label>
+    <div class="err" id="nmErr" role="alert"></div>
+    <div class="dlg-actions"><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn primary">确定</button></div>
+  </form>
+</dialog>
+
+<div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-label="预览">
+  <header class="viewer-bar">
+    <span class="viewer-name ell" id="vwName"></span>
+    <span class="viewer-count" id="vwCount"></span>
+    <a class="icon-btn" id="vwDownload" aria-label="下载" title="下载"></a>
+    <button class="icon-btn" id="vwClose" aria-label="关闭预览" title="关闭"></button>
+  </header>
+  <div class="viewer-stage" id="vwStage"></div>
+  <button class="viewer-nav prev" id="vwPrev" aria-label="上一个"></button>
+  <button class="viewer-nav next" id="vwNext" aria-label="下一个"></button>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+<script src="icons.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
